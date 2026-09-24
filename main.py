@@ -113,6 +113,33 @@ def enroll(
     return {**result, "utterances": details, "warning": warning}
 
 
+@app.post("/speakers/{speaker_id}/enroll-one",
+          summary="Enrol ONE clip (use this from Swagger UI; call it once per clip)")
+def enroll_one(
+    speaker_id: str,
+    file: UploadFile = File(..., description="A single clip"),
+    replace: bool = Form(False, description="Discard any existing voiceprint first"),
+):
+    """Swagger UI cannot render a multi-file upload field (it shows "Add string
+    item" instead of a file picker), so this single-file variant exists for the
+    browser. Calling it once per clip merges each new utterance into the stored
+    voiceprint, giving the same result as one /enroll call with all the files."""
+    emb, seconds, sr = _embed_upload(file)
+    try:
+        result = STATE["registry"].enroll(speaker_id, [emb], replace=replace)
+    except RegistryError as e:
+        raise HTTPException(400, str(e))
+
+    warning = None
+    if result["n_utterances"] < config.MIN_ENROLL_UTTERANCES:
+        warning = (f"{result['n_utterances']} utterance(s) enrolled so far; call this "
+                   f"again with another clip until you reach {config.MIN_ENROLL_UTTERANCES}")
+    return {**result,
+            "utterances": [{"filename": file.filename,
+                            "seconds": round(seconds, 2), "sample_rate": sr}],
+            "warning": warning}
+
+
 @app.post("/verify", summary="1:1 - does this voice match the claimed speaker?")
 def verify(
     speaker_id: str = Form(..., description="The identity the caller claims"),
