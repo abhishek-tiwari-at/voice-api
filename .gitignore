@@ -1,0 +1,8 @@
+registry.json
+registry.json.tmp
+__pycache__/
+*.pyc
+.venv/
+venv/
+samples/
+*.gguf
