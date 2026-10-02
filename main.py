@@ -6,7 +6,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 import config
 from engine import AudioError, EngineError, VoiceEngine, cosine_distance, check_duration, decode_audio
@@ -64,7 +64,18 @@ def _embed_upload(upload: UploadFile):
 
 @app.get("/", include_in_schema=False)
 def root():
-    return RedirectResponse("/docs")
+    return RedirectResponse("demo")
+
+
+@app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
+def demo_page():
+    """Browser demo: records from the laptop microphone and drives the API.
+
+    Served from the same origin as the API so fetch() needs no CORS, and over
+    HTTPS when behind Cloud Shell Web Preview, which getUserMedia requires."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo.html")
+    with open(path, encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 
 @app.get("/health", summary="Engine status and active configuration")

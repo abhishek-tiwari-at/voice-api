@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Authentication — Simulated Call</title>
+<style>
+  :root {
+    --bg:#f3f5f7; --panel:#fff; --ink:#11171c; --ink2:#49545d; --muted:#6c7881;
+    --rule:#dbe1e5; --accent:#0f556a; --accent2:#0b7f9c;
+    --ok:#2b6845; --okbg:#e3efe8; --bad:#94292a; --badbg:#f8e4e4;
+    --warn:#8a5c12; --warnbg:#f8eeda;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.6 "Segoe UI",system-ui,-apple-system,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+  header{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:22px}
+  h1{margin:0 0 4px;font-size:1.5rem;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13.5px}
+  .panel{background:var(--panel);border:1px solid var(--rule);padding:20px 22px;margin-bottom:16px}
+  .panel h2{margin:0 0 14px;font-size:1.05rem}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.07em;
+        color:var(--muted);margin-bottom:6px;font-weight:600}
+  input[type=text]{width:100%;padding:10px 12px;font-size:15px;border:1px solid var(--rule);
+        background:var(--bg);color:var(--ink);font-family:inherit}
+  button{font:600 14px/1 inherit;padding:11px 18px;border:1px solid var(--accent);
+        background:var(--accent);color:#fff;cursor:pointer}
+  button:hover:not(:disabled){background:var(--accent2);border-color:var(--accent2)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--accent);border-color:var(--rule)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .steps{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+  .step{flex:1;min-width:110px;padding:8px 10px;border:1px solid var(--rule);
+        background:var(--panel);font-size:12px;color:var(--muted);text-align:center}
+  .step.active{border-color:var(--accent);color:var(--accent);font-weight:600;
+        box-shadow:inset 0 -2px 0 var(--accent)}
+  .step.done{color:var(--ok);border-color:var(--ok)}
+  .prompt{background:var(--bg);border-left:3px solid var(--accent2);padding:14px 16px;margin:14px 0}
+  .prompt .words{font-size:1.3rem;font-weight:600;letter-spacing:.03em;margin-top:6px}
+  .meter{height:10px;background:var(--bg);border:1px solid var(--rule);margin:14px 0 8px;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;background:var(--accent2);transition:width .08s}
+  .timer{font-variant-numeric:tabular-nums;font-weight:600;font-size:1.1rem}
+  .hint{font-size:13px;color:var(--muted)}
+  .verdict{padding:16px 18px;border-left:4px solid;margin-bottom:14px}
+  .verdict.ok{background:var(--okbg);border-color:var(--ok)}
+  .verdict.bad{background:var(--badbg);border-color:var(--bad)}
+  .verdict.warn{background:var(--warnbg);border-color:var(--warn)}
+  .verdict h3{margin:0 0 4px;font-size:1.1rem}
+  .verdict.ok h3{color:var(--ok)} .verdict.bad h3{color:var(--bad)} .verdict.warn h3{color:var(--warn)}
+  .verdict p{margin:0;font-size:14px;color:var(--ink2)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:6px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:var(--bg)}
+  td.n{font-family:Consolas,monospace;font-variant-numeric:tabular-nums}
+  .tag{display:inline-block;padding:2px 8px;font-size:11.5px;font-weight:600;
+       text-transform:uppercase;letter-spacing:.05em}
+  .tag.ok{background:var(--okbg);color:var(--ok)} .tag.bad{background:var(--badbg);color:var(--bad)}
+  .tag.warn{background:var(--warnbg);color:var(--warn)}
+  pre{background:#12181d;color:#ccd6dd;padding:14px;overflow-x:auto;font-size:12.5px;margin:0}
+  details{margin-top:12px} summary{cursor:pointer;font-size:13px;color:var(--accent)}
+  .err{background:var(--badbg);border-left:4px solid var(--bad);padding:12px 16px;
+       color:var(--bad);font-size:14px;margin-bottom:14px}
+  .hidden{display:none!important}
+  .note{font-size:12.5px;color:var(--muted);border-top:1px solid var(--rule);padding-top:10px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Voice Authentication — Simulated Call</h1>
+    <div class="sub">Stands in for an Amazon Connect contact flow. Audio is captured from this
+      browser's microphone and scored by the voice-detect.cpp engine.</div>
+  </header>
+
+  <div class="steps">
+    <div class="step active" id="s1">1 · Incoming call</div>
+    <div class="step" id="s2">2 · Look up customer</div>
+    <div class="step" id="s3">3 · Capture voice</div>
+    <div class="step" id="s4">4 · Decision</div>
+  </div>
+
+  <div id="error" class="err hidden"></div>
+
+  <!-- STEP 1 -->
+  <div class="panel" id="panel-call">
+    <h2>Incoming call</h2>
+    <p class="hint">The IVR has already identified the caller from their account number or
+      calling line ID. Enter that identity.</p>
+    <label for="cid">Customer identifier</label>
+    <input type="text" id="cid" placeholder="e.g. abhishek" autocomplete="off">
+    <div class="row" style="margin-top:14px">
+      <button id="btn-call">Answer call</button>
+      <button class="ghost" id="btn-reset">Reset demo</button>
+    </div>
+    <div class="note" id="enrolled-list">Loading enrolled speakers…</div>
+  </div>
+
+  <!-- STEP 2/3 -->
+  <div class="panel hidden" id="panel-record">
+    <h2 id="rec-title">Capture voice</h2>
+    <p class="hint" id="rec-why"></p>
+    <div class="prompt">
+      Please read this aloud, clearly and continuously:
+      <div class="words" id="phrase">—</div>
+    </div>
+    <div class="meter"><i id="level"></i></div>
+    <div class="row">
+      <span class="timer" id="timer">0.0 s</span>
+      <span class="hint" id="rec-hint">Need at least 3.0 s of speech</span>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="btn-rec">Start recording</button>
+      <button id="btn-stop" disabled>Stop &amp; submit</button>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="panel hidden" id="panel-result">
+    <h2>Decision</h2>
+    <div id="verdict"></div>
+    <div id="tables"></div>
+    <details>
+      <summary>Raw API responses</summary>
+      <pre id="raw"></pre>
+    </details>
+    <div class="row" style="margin-top:16px">
+      <button id="btn-again">Place another call</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const MIN_SEC = 3.0, MAX_SEC = 15.0, ENROL_CLIPS = 3;
+const WORDS = ("river tiger copper harbour lantern meadow cobalt thunder velvet "
+             + "orchid granite silver compass maple ember willow falcon canyon "
+             + "amber quartz juniper beacon cedar ripple").split(" ");
+
+let state = { cid:null, mode:null, clipsDone:0, enrolled:[] };
+let media = { stream:null, rec:null, chunks:[], t0:0, timer:null, ac:null, raf:null };
+
+const $ = id => document.getElementById(id);
+const show = (id,on=true) => $(id).classList.toggle("hidden", !on);
+function setStep(n){ [1,2,3,4].forEach(i=>{
+  const el=$("s"+i); el.classList.toggle("active", i===n); el.classList.toggle("done", i<n); }); }
+function fail(msg){ $("error").textContent = msg; show("error", true); }
+function clearFail(){ show("error", false); }
+function phrase(){ const p=[]; while(p.length<4) {
+  const w=WORDS[Math.floor(Math.random()*WORDS.length)]; if(!p.includes(w)) p.push(w); } return p.join("  "); }
+
+async function loadSpeakers(){
+  try{
+    const r = await fetch("speakers"); const d = await r.json();
+    state.enrolled = d.speakers.map(s=>s.speaker_id);
+    $("enrolled-list").textContent = state.enrolled.length
+      ? `Enrolled: ${d.speakers.map(s=>`${s.speaker_id} (${s.n_utterances} clip${s.n_utterances>1?"s":""})`).join(", ")}`
+      : "No speakers enrolled yet — the first call will run enrolment.";
+  }catch(e){ $("enrolled-list").textContent = "Could not reach the API: " + e.message; }
+}
+
+$("btn-call").onclick = async () => {
+  clearFail();
+  const cid = $("cid").value.trim();
+  if(!cid){ fail("Enter a customer identifier first."); return; }
+  state.cid = cid; state.clipsDone = 0;
+  setStep(2);
+  await loadSpeakers();
+  state.mode = state.enrolled.includes(cid) ? "verify" : "enrol";
+  show("panel-call", false); show("panel-record", true); setStep(3);
+  if(state.mode === "enrol"){
+    $("rec-title").textContent = `Enrolment — ${cid} (new customer)`;
+    $("rec-why").textContent = `No voiceprint exists for "${cid}", so this call enrols one. `
+      + `You will record ${ENROL_CLIPS} clips; each is averaged into a single voiceprint.`;
+  }else{
+    $("rec-title").textContent = `Authentication — caller claims to be ${cid}`;
+    $("rec-why").textContent = "A voiceprint exists. One clip will be scored against it (1:1) "
+      + "and against every enrolled speaker (1:N).";
+  }
+  $("phrase").textContent = phrase();
+};
+
+$("btn-reset").onclick = async () => {
+  for(const s of state.enrolled){ try{ await fetch("speakers/"+encodeURIComponent(s), {method:"DELETE"}); }catch(e){} }
+  state.enrolled = []; await loadSpeakers();
+};
+$("btn-again").onclick = () => {
+  show("panel-result", false); show("panel-call", true); setStep(1);
+  $("cid").value = ""; loadSpeakers();
+};
+
+$("btn-rec").onclick = async () => {
+  clearFail();
+  try{
+    media.stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,
+      echoCancellation:true, noiseSuppression:true}});
+  }catch(e){
+    fail("Microphone unavailable: " + e.name + ". The page must be served over HTTPS "
+       + "(Cloud Shell Web Preview is), and the browser must be granted mic permission.");
+    return;
+  }
+  const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+  media.chunks = [];
+  media.rec = new MediaRecorder(media.stream, mime ? {mimeType:mime} : undefined);
+  media.rec.ondataavailable = e => { if(e.data.size) media.chunks.push(e.data); };
+  media.rec.onstop = submit;
+  media.rec.start();
+  media.t0 = performance.now();
+
+  $("btn-rec").disabled = true; $("btn-stop").disabled = true;
+  media.timer = setInterval(()=>{
+    const s = (performance.now()-media.t0)/1000;
+    $("timer").textContent = s.toFixed(1)+" s";
+    if(s >= MIN_SEC){ $("btn-stop").disabled = false; $("rec-hint").textContent = "Long enough — stop when ready"; }
+    if(s >= MAX_SEC) stopRec();
+  }, 100);
+
+  media.ac = new AudioContext();
+  const an = media.ac.createAnalyser(); an.fftSize = 512;
+  media.ac.createMediaStreamSource(media.stream).connect(an);
+  const buf = new Uint8Array(an.fftSize);
+  (function draw(){
+    an.getByteTimeDomainData(buf);
+    let peak = 0; for(const v of buf) peak = Math.max(peak, Math.abs(v-128));
+    $("level").style.width = Math.min(100, peak/128*220).toFixed(0)+"%";
+    media.raf = requestAnimationFrame(draw);
+  })();
+};
+
+function stopRec(){
+  if(media.rec && media.rec.state !== "inactive") media.rec.stop();
+  clearInterval(media.timer); cancelAnimationFrame(media.raf);
+  if(media.ac) media.ac.close();
+  $("level").style.width = "0";
+  $("btn-stop").disabled = true;
+}
+$("btn-stop").onclick = stopRec;
+
+async function submit(){
+  media.stream.getTracks().forEach(t=>t.stop());
+  const blob = new Blob(media.chunks, {type:"audio/webm"});
+  $("rec-hint").textContent = "Scoring…";
+  try{
+    if(state.mode === "enrol") await doEnrol(blob); else await doVerify(blob);
+  }catch(e){ fail("Request failed: " + e.message); }
+  $("btn-rec").disabled = false;
+}
+
+function form(blob, extra={}){
+  const fd = new FormData();
+  fd.append("file", blob, "recording.webm");
+  for(const [k,v] of Object.entries(extra)) fd.append(k, v);
+  return fd;
+}
+async function post(path, fd){
+  const r = await fetch(path, {method:"POST", body:fd});
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.detail || JSON.stringify(d));
+  return d;
+}
+
+async function doEnrol(blob){
+  const d = await post(`speakers/${encodeURIComponent(state.cid)}/enroll-one`, form(blob));
+  state.clipsDone++;
+  if(state.clipsDone < ENROL_CLIPS){
+    $("rec-title").textContent = `Enrolment — ${state.cid} (clip ${state.clipsDone+1} of ${ENROL_CLIPS})`;
+    $("rec-why").textContent = `Clip ${state.clipsDone} accepted (${d.utterances[0].seconds}s). `
+      + `Record ${ENROL_CLIPS-state.clipsDone} more — say something different each time.`;
+    $("phrase").textContent = phrase();
+    $("timer").textContent = "0.0 s";
+    $("rec-hint").textContent = `Need at least ${MIN_SEC.toFixed(1)} s of speech`;
+    return;
+  }
+  show("panel-record", false); show("panel-result", true); setStep(4);
+  $("verdict").innerHTML = `<div class="verdict ok"><h3>Enrolment complete</h3>
+     <p>A voiceprint for <b>${state.cid}</b> was built from ${d.n_utterances} clips
+     (192 numbers; no audio is stored). Place another call as the same customer to authenticate,
+     or as a different name to test an impostor.</p></div>`;
+  $("tables").innerHTML = "";
+  $("raw").textContent = JSON.stringify(d, null, 2);
+  await loadSpeakers();
+}
+
+async function doVerify(blob){
+  const v = await post("verify", form(blob, {speaker_id: state.cid}));
+  const i = await post("identify", form(blob));
+
+  const accepted = v.decision === "accept";
+  const wouldDefault = v.distance <= 0.25;
+  $("verdict").innerHTML = `
+    <div class="verdict ${accepted?"ok":"bad"}">
+      <h3>${accepted ? "Authenticated" : "Not authenticated"}</h3>
+      <p>${accepted
+        ? `The voice matches the stored voiceprint for <b>${state.cid}</b>. A contact flow would route this call normally.`
+        : `The voice does not match <b>${state.cid}</b>. A contact flow would route to step-up authentication or an agent.`}</p>
+    </div>
+    ${(!accepted && wouldDefault) ? `<div class="verdict warn">
+      <h3>This caller would have been accepted at the engine's shipped default</h3>
+      <p>Distance ${v.distance.toFixed(4)} is above our calibrated threshold
+      ${v.threshold}, but below the engine's built-in 0.25 — so the shipped default
+      would have let this voice through as ${state.cid}.</p></div>` : ""}`;
+
+  const cand = i.candidates.map(c =>
+    `<tr><td>${c.speaker_id}</td><td class="n">${c.distance.toFixed(4)}</td></tr>`).join("");
+  $("tables").innerHTML = `
+    <table>
+      <tr><th colspan="2">1:1 verification — against the claimed identity</th></tr>
+      <tr><td>Claimed identity</td><td class="n">${state.cid}</td></tr>
+      <tr><td>Distance</td><td class="n">${v.distance.toFixed(4)}</td></tr>
+      <tr><td>Threshold</td><td class="n">${v.threshold}</td></tr>
+      <tr><td>Clip length</td><td class="n">${v.seconds} s</td></tr>
+      <tr><td>Decision</td><td><span class="tag ${accepted?"ok":"bad"}">${v.decision}</span></td></tr>
+    </table>
+    <table style="margin-top:14px">
+      <tr><th colspan="2">1:N identification — against every enrolled speaker</th></tr>
+      <tr><td>Decision</td><td><span class="tag ${
+        i.decision==="match"?"ok":i.decision==="no_match"?"bad":"warn"}">${i.decision}</span></td></tr>
+      <tr><td>Best candidate</td><td class="n">${i.best_candidate ?? "—"}</td></tr>
+      <tr><td>Runner-up distance</td><td class="n">${i.runner_up_distance ?? "—"}</td></tr>
+      <tr><th colspan="2">Ranked candidates</th></tr>
+      ${cand}
+    </table>`;
+  $("raw").textContent = "POST /verify\n" + JSON.stringify(v, null, 2)
+                       + "\n\nPOST /identify\n" + JSON.stringify(i, null, 2);
+  show("panel-record", false); show("panel-result", true); setStep(4);
+}
+
+loadSpeakers();
+</script>
+</body>
+</html>
