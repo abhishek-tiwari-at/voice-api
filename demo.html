@@ -96,7 +96,19 @@
     <div class="note" id="enrolled-list">Loading enrolled speakers…</div>
   </div>
 
-  <!-- STEP 2/3 -->
+  <!-- STEP 2 -->
+  <div class="panel hidden" id="panel-lookup">
+    <h2>Look up customer</h2>
+    <p class="hint">The contact flow checks the voiceprint store for this identity
+      (<code>GET /speakers</code>) to decide whether this call enrols or authenticates.</p>
+    <div id="lookup-result">Looking up…</div>
+    <div class="row" style="margin-top:14px">
+      <button id="btn-continue" disabled>Continue</button>
+      <button class="ghost" id="btn-hangup">Hang up</button>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
   <div class="panel hidden" id="panel-record">
     <h2 id="rec-title">Capture voice</h2>
     <p class="hint" id="rec-why"></p>
@@ -136,7 +148,7 @@ const WORDS = ("river tiger copper harbour lantern meadow cobalt thunder velvet 
              + "orchid granite silver compass maple ember willow falcon canyon "
              + "amber quartz juniper beacon cedar ripple").split(" ");
 
-let state = { cid:null, mode:null, clipsDone:0, enrolled:[] };
+let state = { cid:null, mode:null, clipsDone:0, enrolled:[], counts:{} };
 let media = { stream:null, rec:null, chunks:[], t0:0, timer:null, ac:null, raf:null };
 
 const $ = id => document.getElementById(id);
@@ -152,6 +164,7 @@ async function loadSpeakers(){
   try{
     const r = await fetch("speakers"); const d = await r.json();
     state.enrolled = d.speakers.map(s=>s.speaker_id);
+    state.counts = Object.fromEntries(d.speakers.map(s=>[s.speaker_id, s.n_utterances]));
     $("enrolled-list").textContent = state.enrolled.length
       ? `Enrolled: ${d.speakers.map(s=>`${s.speaker_id} (${s.n_utterances} clip${s.n_utterances>1?"s":""})`).join(", ")}`
       : "No speakers enrolled yet — the first call will run enrolment.";
@@ -162,15 +175,42 @@ $("btn-call").onclick = async () => {
   clearFail();
   const cid = $("cid").value.trim();
   if(!cid){ fail("Enter a customer identifier first."); return; }
-  state.cid = cid; state.clipsDone = 0;
-  setStep(2);
+  state.cid = cid;
+  show("panel-call", false); show("panel-lookup", true); setStep(2);
+  $("btn-continue").disabled = true;
+  $("lookup-result").innerHTML = `<p class="hint">Looking up <b>${cid}</b>…</p>`;
   await loadSpeakers();
-  state.mode = state.enrolled.includes(cid) ? "verify" : "enrol";
-  show("panel-call", false); show("panel-record", true); setStep(3);
+  // A voiceprint built from fewer than ENROL_CLIPS clips is unfinished: resume
+  // enrolment rather than authenticate against it (same rule as POST /call).
+  const n = state.counts[cid] || 0;
+  state.clipsDone = n;
+  state.mode = n >= ENROL_CLIPS ? "verify" : "enrol";
+  $("lookup-result").innerHTML = n >= ENROL_CLIPS
+    ? `<div class="verdict ok"><h3>Customer found — voiceprint on file</h3>
+       <p><b>${cid}</b> has a voiceprint built from ${n} clips. This call will
+       <b>authenticate</b> the caller: 1:1 against ${cid}, then 1:N against all
+       ${state.enrolled.length} enrolled speaker(s).</p></div>`
+    : n > 0
+    ? `<div class="verdict warn"><h3>Enrolment unfinished</h3>
+       <p><b>${cid}</b> has only ${n} of ${ENROL_CLIPS} clips. This call will
+       <b>resume enrolment</b> and record ${ENROL_CLIPS-n} more.</p></div>`
+    : `<div class="verdict warn"><h3>New customer — no voiceprint on file</h3>
+       <p>Nothing is stored for <b>${cid}</b>. This call will <b>enrol</b> them from
+       ${ENROL_CLIPS} recorded clips.</p></div>`;
+  $("btn-continue").disabled = false;
+};
+
+$("btn-hangup").onclick = () => {
+  show("panel-lookup", false); show("panel-call", true); setStep(1);
+};
+
+$("btn-continue").onclick = () => {
+  const cid = state.cid;
+  show("panel-lookup", false); show("panel-record", true); setStep(3);
   if(state.mode === "enrol"){
-    $("rec-title").textContent = `Enrolment — ${cid} (new customer)`;
-    $("rec-why").textContent = `No voiceprint exists for "${cid}", so this call enrols one. `
-      + `You will record ${ENROL_CLIPS} clips; each is averaged into a single voiceprint.`;
+    $("rec-title").textContent = `Enrolment — ${cid} (clip ${state.clipsDone+1} of ${ENROL_CLIPS})`;
+    $("rec-why").textContent = `No complete voiceprint exists for "${cid}", so this call enrols one. `
+      + `Each clip is averaged into a single voiceprint.`;
   }else{
     $("rec-title").textContent = `Authentication — caller claims to be ${cid}`;
     $("rec-why").textContent = "A voiceprint exists. One clip will be scored against it (1:1) "
