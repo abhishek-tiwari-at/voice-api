@@ -183,6 +183,72 @@ def identify(
     return {**STATE["registry"].identify(emb, thr, mar), "seconds": round(seconds, 2)}
 
 
+@app.post("/call", summary="Call wrapper: enrol a first-time caller, otherwise 1:1 verify + 1:N identify")
+def call(
+    caller_id: str = Form(..., description="Customer id the IVR resolved for this call (ANI / account no.)"),
+    file: UploadFile = File(..., description="One utterance from the caller"),
+    threshold: float = Form(None, description=f"Defaults to {config.THRESHOLD}"),
+):
+    """The whole per-call decision in one request, from ONE embedding of the clip.
+
+    - caller has fewer than MIN_ENROLL_UTTERANCES clips stored -> the clip is
+      enrolled (each call adds one). Before storing, the voice is searched 1:N
+      against everyone else, so a voice already enrolled under another id is
+      flagged instead of silently becoming a second identity.
+    - caller is fully enrolled -> 1:1 verify against the claimed id AND 1:N
+      identify across the registry, combined into one outcome:
+        authenticated  verify accepts and identify agrees (or finds no rival)
+        review         verify accepts but identify prefers another speaker
+        impostor_known verify rejects and the voice matches another enrolled id
+        rejected       verify rejects and the voice matches nobody
+    """
+    emb, seconds, _ = _embed_upload(file)
+    thr = config.THRESHOLD if threshold is None else float(threshold)
+    reg = STATE["registry"]
+    n_have = next((s["n_utterances"] for s in reg.list() if s["speaker_id"] == caller_id), 0)
+
+    if n_have < config.MIN_ENROLL_UTTERANCES:
+        dup = reg.identify(emb, thr, config.IDENTIFY_MARGIN)
+        clash = dup["decision"] == "match" and dup["speaker_id"] != caller_id
+        if clash:
+            # Do not merge a voice that already belongs to someone else.
+            return {"mode": "enrolment", "outcome": "duplicate_voice",
+                    "caller_id": caller_id, "n_utterances": n_have,
+                    "needed": config.MIN_ENROLL_UTTERANCES,
+                    "matches_existing": dup["speaker_id"], "distance": dup["distance"],
+                    "seconds": round(seconds, 2), "routing": "agent_fraud_review"}
+        try:
+            res = reg.enroll(caller_id, [emb])
+        except RegistryError as e:
+            raise HTTPException(400, str(e))
+        done = res["n_utterances"] >= config.MIN_ENROLL_UTTERANCES
+        return {"mode": "enrolment",
+                "outcome": "enrolment_complete" if done else "enrolment_in_progress",
+                "caller_id": caller_id, "n_utterances": res["n_utterances"],
+                "needed": config.MIN_ENROLL_UTTERANCES,
+                "seconds": round(seconds, 2),
+                "routing": "agent_with_kba" if done else "collect_more_audio"}
+
+    v = reg.verify(emb, caller_id, thr)
+    i = reg.identify(emb, thr, config.IDENTIFY_MARGIN)
+    rival = i["decision"] == "match" and i["speaker_id"] != caller_id
+    if v["decision"] == "accept":
+        outcome, routing = ("review", "agent_with_kba") if rival else ("authenticated", "self_service")
+    else:
+        outcome, routing = ("impostor_known", "agent_fraud_review") if rival else ("rejected", "agent_with_kba")
+    return {"mode": "authentication", "outcome": outcome, "routing": routing,
+            "caller_id": caller_id, "seconds": round(seconds, 2),
+            "verify": v, "identify": i,
+            "at_engine_default_0_25": bool(v["distance"] <= 0.25),
+            "contact_attributes": {
+                "voiceAuthDecision": v["decision"],
+                "voiceAuthOutcome": outcome,
+                "voiceAuthScore": f"{v['score']:.4f}",
+                "voiceAuthThreshold": str(thr),
+                "voiceAuthModel": STATE["model_id"],
+            }}
+
+
 @app.post("/compare", summary="Compare two clips directly, without the registry")
 def compare(
     file_a: UploadFile = File(...),

@@ -72,6 +72,7 @@ curl http://127.0.0.1:8000/health
 | `POST` | `/verify` | 1:1 — does this voice match the claimed speaker? |
 | `POST` | `/identify` | 1:N — who is this? Returns `no_match` if nobody fits |
 | `POST` | `/compare` | Compare two clips directly, no registry involved |
+| `POST` | `/call` | **Call wrapper**: enrol a first-time caller, else 1:1 verify + 1:N identify |
 | `DELETE` | `/speakers/{id}` | Delete a voiceprint |
 
 `/verify` also returns a `contact_attributes` block in the flat string form an
@@ -167,7 +168,31 @@ reproduced the false-accept finding with your own voice.
 
 ---
 
-## 7. Known limits
+## 7. Simulated call from the laptop microphone
+
+`POST /call` is the whole per-call decision in one request: send `caller_id`
+plus one clip. If the caller has fewer than 3 clips stored, the clip is enrolled
+(after a 1:N check that the voice is not already enrolled under another id).
+Otherwise it runs 1:1 verify and 1:N identify on the same embedding and returns
+one `outcome` (`authenticated`, `review`, `impostor_known`, `rejected`) and the
+`routing` it implies.
+
+`call_sim.py` plays the IVR in the terminal and records from the laptop mic
+(8 kHz mono, i.e. telephone bandwidth):
+
+```
+python -m uvicorn main:app --port 8000      # terminal 1
+python call_sim.py                          # terminal 2: first run enrols (3 recordings)
+python call_sim.py --caller abhishek        # run again: verify + identify
+python call_sim.py --caller abhishek --file colleague.wav   # replay a file instead
+```
+
+Speak for the full 6 s (`--seconds` to change it); short clips are what cause
+false rejects. The browser version is at `/demo`.
+
+---
+
+## 8. Known limits
 
 Be upfront about these when demonstrating.
 
