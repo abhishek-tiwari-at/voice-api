@@ -325,19 +325,13 @@ async function doVerify(blob){
   const i = await post("identify", form(blob));
 
   const accepted = v.decision === "accept";
-  const wouldDefault = v.distance <= 0.25;
   $("verdict").innerHTML = `
     <div class="verdict ${accepted?"ok":"bad"}">
       <h3>${accepted ? "Authenticated" : "Not authenticated"}</h3>
       <p>${accepted
         ? `The voice matches the stored voiceprint for <b>${state.cid}</b>. A contact flow would route this call normally.`
         : `The voice does not match <b>${state.cid}</b>. A contact flow would route to step-up authentication or an agent.`}</p>
-    </div>
-    ${(!accepted && wouldDefault) ? `<div class="verdict warn">
-      <h3>This caller would have been accepted at the engine's shipped default</h3>
-      <p>Distance ${v.distance.toFixed(4)} is above our calibrated threshold
-      ${v.threshold}, but below the engine's built-in 0.25 — so the shipped default
-      would have let this voice through as ${state.cid}.</p></div>` : ""}`;
+    </div>`;
 
   const cand = i.candidates.map(c =>
     `<tr><td>${c.speaker_id}</td><td class="n">${c.distance.toFixed(4)}</td></tr>`).join("");

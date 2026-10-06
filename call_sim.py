@@ -84,8 +84,6 @@ def show(d):
         print(f"  1:N identify best match: {who}  distance {i['distance']:.4f}")
         for c in i["candidates"]:
             print(f"               - {c['speaker_id']:<20} {c['distance']:.4f}")
-        if v["decision"] == "reject" and d["at_engine_default_0_25"]:
-            print("  !! The engine's shipped 0.25 threshold would have ACCEPTED this caller.")
     print(f"  ROUTING    {ROUTE_TEXT.get(d['routing'], d['routing'])}")
     print()
 

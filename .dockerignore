@@ -1,0 +1,9 @@
+# Allow-list: the image needs only the service code. Voiceprints
+# (registry.json), sample audio and local venvs must never end up in it.
+*
+!requirements.txt
+!config.py
+!engine.py
+!registry.py
+!main.py
+!demo.html

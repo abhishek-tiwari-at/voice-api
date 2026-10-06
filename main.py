@@ -35,8 +35,8 @@ app = FastAPI(
     title="Voice Biometrics Demo API",
     description=(
         "Speaker enrolment, verification and identification over the "
-        "voice-detect.cpp engine. Threshold defaults to a calibrated value, NOT "
-        "the engine's shipped 0.25, which false-accepts a different speaker."
+        "voice-detect.cpp engine. Accept/reject decisions use a single calibrated "
+        f"threshold (cosine distance <= {config.THRESHOLD})."
     ),
     version="0.1.0",
     lifespan=lifespan,
@@ -239,7 +239,6 @@ def call(
     return {"mode": "authentication", "outcome": outcome, "routing": routing,
             "caller_id": caller_id, "seconds": round(seconds, 2),
             "verify": v, "identify": i,
-            "at_engine_default_0_25": bool(v["distance"] <= 0.25),
             "contact_attributes": {
                 "voiceAuthDecision": v["decision"],
                 "voiceAuthOutcome": outcome,
@@ -264,7 +263,6 @@ def compare(
         "score": round(1.0 - d, 6),
         "same_speaker": bool(d <= thr),
         "threshold": thr,
-        "at_engine_default_0_25": bool(d <= 0.25),   # shows the false accept
         "seconds": {"a": round(sec_a, 2), "b": round(sec_b, 2)},
     }
 

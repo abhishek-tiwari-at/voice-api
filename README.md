@@ -62,6 +62,26 @@ curl http://127.0.0.1:8000/health
 
 ---
 
+### With Docker (no engine checkout needed)
+
+The image clones and builds voice-detect.cpp and downloads the model itself,
+both pinned to the versions this API was tested with (see the `ARG`s at the top
+of the `Dockerfile`).
+
+```
+docker build -t voice-api .
+docker run -d --name voice-api -p 127.0.0.1:8000:8000 -v voice-data:/data voice-api
+curl http://127.0.0.1:8000/health
+```
+
+Voiceprints are stored in `/data/registry.json` inside the container. Keep `/data`
+on a volume (`-v voice-data:/data`) or every enrolment is lost when the container
+is replaced. Pass any setting from section 4 with `-e`, e.g. `-e VD_THRESHOLD=0.13`.
+The `-p 127.0.0.1:...` binding keeps the API reachable only from the host; the API
+has no authentication.
+
+---
+
 ## 3. Endpoints
 
 | Method | Path | Purpose |
@@ -78,9 +98,8 @@ curl http://127.0.0.1:8000/health
 `/verify` also returns a `contact_attributes` block in the flat string form an
 Amazon Connect contact flow consumes.
 
-`/compare` returns `at_engine_default_0_25`, which shows whether the engine's own
-shipped threshold would have accepted the pair. That is how you demonstrate the
-false-accept finding live.
+Every accept/reject decision uses the one configured threshold (`VD_THRESHOLD`,
+default `0.13`).
 
 ---
 
@@ -158,13 +177,9 @@ curl -X POST http://127.0.0.1:8000/verify -F "speaker_id=abhishek" -F "file=@col
 # 4. identify an unenrolled person -> expect no_match, not a wrong name
 curl -X POST http://127.0.0.1:8000/identify -F "file=@colleague.wav"
 
-# 5. show the engine's shipped default would have accepted the impostor
+# 5. compare two clips directly -> expect same_speaker: false
 curl -X POST http://127.0.0.1:8000/compare -F "file_a=@me_test.wav" -F "file_b=@colleague.wav"
 ```
-
-Step 5 is the interesting one. Look at `same_speaker` (false, at the calibrated
-threshold) against `at_engine_default_0_25` — if that comes back `true`, you have
-reproduced the false-accept finding with your own voice.
 
 ---
 
